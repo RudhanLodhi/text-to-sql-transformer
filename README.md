@@ -26,3 +26,13 @@ text-to-sql-transformer/
 ├── requirements.txt
 └── README.md
 ```
+Run these commands in sequence for recreation:
+```
+python3.10 -m venv .venv
+source .venv/bin/activate
+chmod +x scripts/download_data.sh
+./scripts/download_data.sh
+python3 -m scripts.data_prep
+python3 -m scripts.tokenizer
+python3 -m scripts.check_starter
+```
