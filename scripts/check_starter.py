@@ -1,6 +1,6 @@
 import sentencepiece as spm
 from dataset import make_loader
-from embeddings import TokenEmbedding, InputLayer
+from scripts.embeddings import TokenEmbedding, InputLayer
 from tokenizer import PAD_ID
 
 
