@@ -30,7 +30,7 @@ class TokenEmbedding(nn.Module):
         """forward pass of to get embeddings from token ids
 
         Args:
-            ids (tensor): input tensor of shape (batch, seq_len)
+            ids (tensor): input ids of shape (batch, seq_len)
 
         Returns:
             tensor: output embeddings of shape (batch, seq_len, d_model)
@@ -46,7 +46,7 @@ class PositionalEncoding(nn.Module):
     """
 
     def __init__(self, d_model: int, max_len: int=512, dropout: float=0.1):
-        """initializer of the sinosoidal positional encoding
+        """initializer of the fixed sinosoidal positional encoding
 
         Args:
             d_model (int): model embedding dimention
@@ -63,7 +63,7 @@ class PositionalEncoding(nn.Module):
             * (-math.log(10000.0) / d_model)
         )  # (d_model/2,)
 
-        pe = torch.zeros(max_len, d_model)
+        pe = torch.zeros(max_len, d_model) # (seq_len, d_model)
 
         # pos * div (max_len, d_model/2)
         pe[:, 0::2] = torch.sin(pos * div)
@@ -78,13 +78,13 @@ class PositionalEncoding(nn.Module):
         """forward pass that adds token embedding with sinosoidal encoding and then apply dropout
 
         Args:
-            x (tensor): input tensor of embeddings of shape (batch, seq_len, d_model)
+            x (tensor): input embeddings of shape (batch, seq_len, d_model)
 
         Returns:
             tensor: final output of shape (batch, seq_len, d_model)
         """
         return self.dropout(
-            x + self.pe[:, :x.size(1)]
+            x + self.pe[:, :x.size(1), :]
         )
 
 

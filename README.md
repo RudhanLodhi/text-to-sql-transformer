@@ -30,6 +30,7 @@ Run these commands in sequence for recreation:
 ```
 python3.10 -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
 chmod +x scripts/download_data.sh
 ./scripts/download_data.sh
 python3 -m scripts.data_prep
