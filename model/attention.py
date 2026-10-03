@@ -15,7 +15,20 @@ class MultiHeadAttention(nn.Module):
             h (int): number of heads
             dropout (float, optional): dropout to be applied on attention scores. Defaults to 0.1.
         """
-        pass
+        super().__init__()
+        
+        self.d_model = d_model # embedding dim
+        self.h = h # no. heads
+        self.d_k = d_model // h # dim of each head
+        
+        self.dropout = nn.Dropout(dropout)
+        
+        self.w_k = nn.Linear(d_model, d_model) # key
+        self.w_q = nn.Linear(d_model, d_model) # q
+        self.w_v = nn.Linear(d_model, d_model) # value
+        
+        self.w_o = nn.Linear(d_model, d_model) # output
+        
 
     def forward(self, query, key, value, mask):
         """forward pass for the multi-head attention mechanism
@@ -29,20 +42,30 @@ class MultiHeadAttention(nn.Module):
         Returns:
             tensor: output tensor of shape (batch, seq_len, d_model)
         """
-        pass
-
-    @staticmethod
-    def attention(query, key, value, mask, dropout: nn.Dropout=None):
-        """applies multi-head attention to the input tensors.
-
-        Args:
-            query (tensor): query tensor of shape (batch, h, seq_len, d_k)
-            key (tensor): key tensor of shape (batch, h, seq_len, d_k)
-            value (tensor): value tensor of shape (batch, h, seq_len, d_k)
-            mask (tensor): mask tensor of shape (___)
-            dropout (tensor, optional): dropout layer to be applied on attention scores. Defaults to None.
-
-        Returns:
-            tensor: output tensor of shape (batch, h, seq_len, d_k) and attention scores of shape (batch, h, seq_len, seq_len)
-        """
-        pass
+        
+        Q = self.w_q(query) # (batch, seq_len, d_model) @ (d_model, d_model) -> (batch, seq_len, d_model)
+        K = self.w_k(key)   # //
+        V = self.w_v(value) # //
+        
+        q = Q.view(Q.size(0), Q.size(1), self.h, self.d_k) # (batch , seq_len, h, d_k)
+        k = K.view(K.size(0), K.size(1), self.h, self.d_k) # //
+        v = V.view(V.size(0), V.size(1), self.h, self.d_k) # //
+        
+        q = q.transpose(1, 2) # (batch, h, seq_len, d_k)
+        k = k.transpose(1, 2) # //
+        v = v.transpose(1, 2) # //
+        
+        att = q @ k.transpose(-2, -1) / math.sqrt(self.d_k) # (batch, h ,seq_len, d_k) @ (batch, h, d_k, seq_len) -> (batch, h, seq_len, seq_len)
+        
+        if mask is not None:
+            att = att.masked_fill(mask == 0, float("-inf"))
+        
+        score = torch.softmax(att, dim=-1)
+        
+        if self.dropout is not None:
+            score = self.dropout(score)
+        
+        score = score @ v # (batch, h, seq_len, seq_len) @ (batch, h, seq_len, d_k) -> (batch, h, seq_len, d_k)
+        score = score.transpose(1, 2).contigous().view(score.size(0), -1, self.d_model) # (batch, seq_len, d_model)
+        
+        return self.w_o(score) # (batch, seq_len, d_model) @ (d_model, d_model) -> (batch, seq_len, d_model)
