@@ -26,11 +26,27 @@ class Transformer(nn.Module):
         self.embedding = embedding
         self.input_layer = input_layer
 
+    def forward(self, src, tgt, src_mask, tgt_mask):
+        """forward pass for decoder module
+        
+        Args:
+            src (tensor): source token ids of shape (batch, s_seq_len)
+            tgt (tensor): target token ids of shape (batch, t_seq_len)
+            src_mask (tensor): source sequence mask tensor of shape (___)
+            tgt_mask (tensor): target sequence mask tensor of shape (___)
+
+        Returns:
+            tensor: output logits of shape (batch, t_seq_len, vocab_size)
+        """
+        enc_output = self.encode(src, src_mask) # (batch, s_seq_len, d_model)
+        dec_output = self.decode(tgt, enc_output, src_mask, tgt_mask) # (batch, t_seq_len, d_model)
+        return self.projection(dec_output) # (batch, s_seq_len, vocab_size)
+
     def encode(self, src, src_mask):
         """forward pass for encoder module
 
         Args:
-            src_ids (tensor): source token ids of shape (batch, s_seq_len)
+            src (tensor): source token ids of shape (batch, s_seq_len)
             src_mask (tensor): source sequence mask tensor of shape (___)
         
         Returns:
@@ -39,12 +55,12 @@ class Transformer(nn.Module):
         x = self.input_layer(src)
         return self.encoder(x, src_mask) # (batch, s_seq_len, d_model)
 
-    def decode(self, tgt, encoder_output, src_mask, tgt_mask):
+    def decode(self, tgt, enc_output, src_mask, tgt_mask):
         """forward pass for decoder module
 
         Args:
-            src_ids (tensor): source token ids of shape (batch, s_seq_len)
-            tgt_ids (tensor): target token ids of shape (batch, t_seq_len)
+            tgt (tensor): source token ids of shape (batch, t_seq_len)
+            enc_output (tensor): target token ids of shape (batch, s_seq_len, d_model)
             src_mask (tensor): source sequence mask tensor of shape (___)
             tgt_mask (tensor): target sequence mask tensor of shape (___)
 
@@ -52,7 +68,7 @@ class Transformer(nn.Module):
             tensor: output tensor of shape (batch, t_seq_len, d_model)
         """
         x = self.input_layer(tgt)
-        return self.decoder(x, encoder_output, src_mask, tgt_mask) # (batch, t_seq_len, d_model)
+        return self.decoder(x, enc_output, src_mask, tgt_mask) # (batch, t_seq_len, d_model)
 
     def projection(self, x):
         """forward pass for projection layer module
