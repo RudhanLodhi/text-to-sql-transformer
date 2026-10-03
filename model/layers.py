@@ -3,103 +3,60 @@ import torch.nn as nn
 from model.attention import MultiHeadAttention
 
 
-class LayerNorm(nn.Module):
-    """layer normalization module
-    gemma * (x - mean) / (std + eps) + beta
-    gemma and beta are learnable parameters each having d_model dimention (for each hidden feature)
-    """
+class AddNorm(nn.Module):
+    """Add & Norm layer acts as a residual connection followed by layer normalization"""
+    def __init__(self, d_model: int):
+        super().__init__()
+        self.norm = nn.LayerNorm(d_model)
+        
+    def forward(self, x, sublayer_x):
+        added = x + sublayer_x # (batch, seq_len, d_model) + (batch, seq_len, d_model) -> (batch, seq_len, d_model)
+        output = self.norm(added)
+        
+        return output # (batch, seq_len, d_model)
 
-    def __init__(self, d_model: int, eps: float=1e-6):
-        """initializer for layer normalization module
-
-        Args:
-            d_model (int): model hidden dimention
-            eps (float, optional): small value to avoid division by zero. Defaults to 1e-6.
-        """
-        pass
-
+class FeedForward(nn.Module):
+    """2 layer point wise feed forward network with ReLU activation and dropout"""
+    def __init__(self, d_model: int, d_ff: int = 2048, dropout: float = 0.1):
+        super().__init__()
+        
+        self.linear1 = nn.Linear(d_model, d_ff)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(d_ff, d_model)
+        
     def forward(self, x):
-        """forward pass for layer normalization module
-
-        Args:
-            x (tensor): unnormalized input tensor of shape (batch, seq_len, d_model)
-
-        Returns:
-            tensor: normalized output tensor of shape (batch, seq_len, d_model)
-        """
-        pass
-
-
-class FeedForwardNetwork(nn.Module):
-    """feed forward network module
-    x -> linear(d_ff) -> relu -> dropout(optional) -> linear(d_model)
-    """
-
-    def __init__(self, d_model: int, d_ff: int, dropout: float=0.1):
-        """initializer for feed forward network module
-
-        Args:
-            d_model (int): model hidden dimension
-            d_ff (int): feed forward hidden dimension
-            dropout (float, optional): dropout to be applied on feed forward network. Defaults to 0.1.
-        """
-        pass
-
-    def forward(self, x):
-        """forward pass for feed forward network module
-
-        Args:
-            x (tensor): input tensor of shape (batch, seq_len, d_model)
-
-        Returns:
-            tensor: output tensor of shape (batch, seq_len, d_model)
-        """
-        pass
-
-
-class ResidualConnection(nn.Module):
-    """residual connection module
-    x -> sublayer(x) -> dropout(optional) -> add(x) -> layer_norm
-    """
-
-    def __init__(self, d_model: int, dropout: float=0.1):
-        """initializer for residual connection module
-
-        Args:
-            d_model (int): model hidden dimention
-            dropout (float, optional): dropout to be applied on residual connection. Defaults to 0.1.
-        """
-        pass
-
-    def forward(self, x, sublayer):
-        """forward pass for residual connection module
-
-        Args:
-            x (tensor): input tensor of shape (batch, seq_len, d_model)
-            sublayer (function): function to be applied on x
-
-        Returns:
-            tensor: output tensor of shape (batch, seq_len, d_model)
-        """
-        pass
-
+        # x shape: (Batch, Seq_Len, d_model)
+        
+        x = self.linear1(x) # (Batch, seq_len, d_model) @ (d_model, d_ff) -> (Batch, Seq_Len, d_ff)
+        x = self.relu(x)   # (Batch, Seq_Len, d_ff)
+        x = self.dropout(x)       
+        output = self.linear2(x) # (Batch, Seq_Len, d_ff) @ (d_ff, d_model) -> (Batch, Seq_Len, d_model)
+        
+        return output
 
 class EncoderLayer(nn.Module):
     """encoder layer module
     x -> multi-head attention -> residual connection -> feed forward network -> residual connection
     """
 
-    def __init__(self, multi_head_attention: MultiHeadAttention, feed_forward_network: FeedForwardNetwork, d_model: int, dropout: float=0.1):
+    def __init__(self, multi_head_attention: MultiHeadAttention, feed_forward_network: FeedForward, add_norm: AddNorm, dropout: float=0.1):
         """initializer for encoder layer module
 
         Args:
             multi_head_attention (MultiHeadAttention): multi-head attention module
             feed_forward_network (FeedForwardNetwork): feed forward network module
+            add_norm (AddNorm): add & norm module
             d_model (int): model hidden dimention
             dropout (float, optional): dropout to be applied on encoder layer. Defaults to 0.1.
         """
-        pass
-
+        super().__init__()
+        self.mha = multi_head_attention
+        self.ffn = feed_forward_network
+        self.add_norm = add_norm
+        self.add_norm2 = AddNorm(multi_head_attention.d_model)
+        self.dropout = nn.Dropout(dropout)
+        
     def forward(self, x, src_mask):
         """forward pass for encoder layer module
 
@@ -110,92 +67,97 @@ class EncoderLayer(nn.Module):
         Returns:
             tensor: output tensor of shape (batch, s_seq_len, d_model)
         """
-        pass
-
+        a = self.mha(x, x, x, src_mask) # (batch, s_seq_len, d_model)
+        a = self.add_norm(x, a) # (batch, s_seq_len, d_model)
+        
+        f = self.ffn(a) # (batch, s_seq_len, d_model)
+        output = self.add_norm2(a, f) # (batch, s_seq_len, d_model)
+        
+        return output
 
 class DecoderLayer(nn.Module):
-    """decoder layer module
-    x -> masked multi-head attention -> residual connection -> multi-head attention -> residual connection -> feed forward network -> residual connection
+    """ Decoder layer module
+    y -> masked multi-head attention -> add norm -> multi-head cross attention -> add norm -> FFN -> residual connection
     """
-
-    def __init__(self, masked_multi_head_attention: MultiHeadAttention, cross_multi_head_attention: MultiHeadAttention, feed_forward_network: FeedForwardNetwork, d_model: int, dropout: float=0.1):
+    def __init__(self, multi_head_attention: MultiHeadAttention, feed_forward_network: FeedForward, add_norm: AddNorm, dropout: float=0.1):
         """initializer for decoder layer module
 
         Args:
-            masked_multi_head_attention (MultiHeadAttention): masked multi-head attention module
-            cross_multi_head_attention (MultiHeadAttention): cross multi-head attention module
+            multi_head_attention (MultiHeadAttention): multi-head attention module
             feed_forward_network (FeedForwardNetwork): feed forward network module
-            d_model (int): model hidden dimention
-            dropout (float, optional): dropout to be applied on decoder layer. Defaults to 0.1.
+            add_norm (AddNorm): add & norm module
+            dropout (float): Defaults to 0.1.
         """
-        pass
-
+        super().__init__()
+        self.mha1 = multi_head_attention
+        self.mha2 = MultiHeadAttention(
+            multi_head_attention.d_model,
+            multi_head_attention.h,
+            dropout
+        )
+        self.ffn = feed_forward_network
+        self.add_norm1 = add_norm
+        self.add_norm2 = AddNorm(multi_head_attention.d_model)
+        self.add_norm3 = AddNorm(multi_head_attention.d_model)
+        self.dropout = nn.Dropout(dropout)
+    
     def forward(self, x, enc_output, src_mask, tgt_mask):
         """forward pass for decoder layer module
 
         Args:
             x (tensor): input tensor of shape (batch, t_seq_len, d_model)
             enc_output (tensor): encoder output tensor of shape (batch, s_seq_len, d_model)
-            src_mask (tensor): source sequence mask tensor of shape (___)
-            tgt_mask (tensor): target sequence mask tensor of shape (___)
-
-        Returns:
-            tensor: output tensor of shape (batch, t_seq_len, d_model)
+            src_mask (tensor): source mask tensor of shape (batch, 1, 1, s_seq_len)
+            tgt_mask (tensor): target mask tensor of shape (batch, 1, t_seq_len, t_seq_len)
         """
-        pass
+        a = self.mha1(x, x, x, tgt_mask) # (batch, t_seq_len, d_model)
+        b = self.add_norm1(x, a) 
+        
+        c = self.mha2(b, enc_output, enc_output, src_mask)
+        d = self.add_norm2(b, c) 
+
+        e = self.ffn(d) 
+        out = self.add_norm3(d, e) # (batch, t_seq_len, d_model)
+        return out
 
 
 class Encoder(nn.Module):
-    """encoder module
-    x -> N * encoder layer -> layer norm
-    """
-
-    def __init__(self, d_model: int, layers: nn.ModuleList):
-        """initializer for encoder module
-
-        Args:
-            d_model (int): model hidden dimention
-            layers (nn.ModuleList): list of encoder layers
-        """
-        pass
+    def __init__(self, d_model: int, N: int , dropout: float = 0.1):
+        """Stackes N layers of EncoderLayer to form the complete encoder module"""
+        
+        super().__init__()
+        self.layers = nn.ModuleList([EncoderLayer(MultiHeadAttention(d_model, h=8, dropout=dropout)
+                                                  , FeedForward(d_model, d_ff=1024, dropout=dropout)
+                                                  , AddNorm(d_model),
+                                                  dropout) for _ in range(N)])
+        self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x, src_mask):
-        """forward pass for encoder module
+        
+        for layer in self.layers:
+            x = layer(x, src_mask)
 
-        Args:
-            x (tensor): input tensor of shape (batch, s_seq_len, d_model)
-            src_mask (tensor): sequence mask tensor of shape (___)
-
-        Returns:
-            tensor: output tensor of shape (batch, s_seq_len, d_model)
-        """
-        pass
-
-
+        output = self.norm(x)
+        return output
 class Decoder(nn.Module):
-    """decoder module
-    x -> N * decoder layer -> layer norm
-    """
+    """Stack N decoder layers and apply a final layer normalization."""
 
-    def __init__(self, d_mdoel: int, layers: nn.ModuleList):
-        """initializer for decoder module
-
-        Args:
-            d_model (int): model hidden dimention
-            layers (nn.ModuleList): list of decoder layers
-        """
-        pass
+    def __init__(self, d_model: int, N: int, h: int = 8,
+                 d_ff: int = 1024, dropout: float = 0.1):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            DecoderLayer(
+                MultiHeadAttention(d_model, h=h, dropout=dropout),
+                FeedForward(d_model, d_ff=d_ff, dropout=dropout),
+                AddNorm(d_model),
+                dropout
+            )
+            for _ in range(N)
+        ])
+        self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x, enc_output, src_mask, tgt_mask):
-        """forward pass for decoder module
+        for layer in self.layers:
+            x = layer(x, enc_output, src_mask, tgt_mask)
 
-        Args:
-            x (tensor): input tensor of shape (batch, t_seq_len, d_model)
-            enc_output (tensor): encoder output tensor of shape (batch, s_seq_len, d_model)
-            src)_mask (tensor): source sequence mask tensor of shape (___)
-            tgt_mask (tensor): target sequence mask tensor of shape (___)
-
-        Returns:
-            tensor: output tensor of shape (batch, t_seq_len, d_model)
-        """
-        pass
+        return self.norm(x)
