@@ -4,7 +4,6 @@ from model.embeddings import TokenEmbedding, InputLayer
 from model.attention import MultiHeadAttention
 from model.layers import Encoder, Decoder, EncoderLayer, DecoderLayer, FeedForward
 
-
 class Transformer(nn.Module):
     """transformer model
     x -> encoder -> decoder -> projection:using transposed embedding matrix -> softmax/log_softmax
