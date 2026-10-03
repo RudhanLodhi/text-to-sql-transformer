@@ -42,7 +42,7 @@ class MultiHeadAttention(nn.Module):
             tensor: output tensor of shape (batch, seq_len, d_model)
         """
         Q = self.w_q(query) # (batch, seq_len, d_model) @ (d_model, d_model) -> (batch, seq_len, d_model)
-        K = self.w_k(key)   # //
+        K = self.w_k(key) # //
         V = self.w_v(value) # //
         
         q = Q.view(Q.size(0), Q.size(1), self.h, self.d_k) # (batch , seq_len, h, d_k)
@@ -54,7 +54,7 @@ class MultiHeadAttention(nn.Module):
         v = v.transpose(1, 2) # //
         
         score, _ = MultiHeadAttention.attention(q, k, v, mask, self.dropout) # (batch, h, seq_len, d_k)
-        score = score.transpose(1, 2).contigous().view(score.size(0), -1, self.d_model) # (batch, seq_len, d_model)
+        score = score.transpose(1, 2).contiguous().view(score.size(0), -1, self.d_model) # (batch, seq_len, d_model)
         
         return self.w_o(score) # (batch, seq_len, d_model) @ (d_model, d_model) -> (batch, seq_len, d_model)
 
