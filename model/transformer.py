@@ -39,7 +39,7 @@ class Transformer(nn.Module):
         """
         enc_output = self.encode(src, src_mask) # (batch, s_seq_len, d_model)
         dec_output = self.decode(tgt, enc_output, src_mask, tgt_mask) # (batch, t_seq_len, d_model)
-        return self.projection(dec_output) # (batch, s_seq_len, vocab_size)
+        return self.projection(dec_output) # (batch, t_seq_len, vocab_size)
 
     def encode(self, src, src_mask):
         """forward pass for encoder module
