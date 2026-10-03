@@ -83,9 +83,10 @@ class PositionalEncoding(nn.Module):
         Returns:
             tensor: final output of shape (batch, seq_len, d_model)
         """
-        return self.dropout(
-            x + self.pe[:, :x.size(1), :]
-        )
+        pos_encoding = self.pe[:, :x.size(1), :]
+        if pos_encoding.device != x.device:
+            pos_encoding = pos_encoding.to(x.device)
+        return self.dropout(x + pos_encoding)
 
 
 class InputLayer(nn.Module):

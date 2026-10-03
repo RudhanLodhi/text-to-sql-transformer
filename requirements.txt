@@ -4,3 +4,5 @@ records
 babel
 tqdm
 tabulate
+matplotlib
+seaborn

@@ -90,7 +90,7 @@ class EncoderLayer(nn.Module):
         self.ffn = feed_forward_network
         self.add_norms = nn.ModuleList([AddNorm(d_model, dropout) for _ in range(2)])
         
-    def forward(self, x, src_mask):
+    def forward(self, x, src_mask=None):
         """forward pass for encoder layer module
 
         Args:
@@ -100,6 +100,9 @@ class EncoderLayer(nn.Module):
         Returns:
             tensor: output tensor of shape (batch, s_seq_len, d_model)
         """
+        if src_mask is not None and src_mask.device != x.device:
+            src_mask = src_mask.to(x.device)
+
         x = self.add_norms[0](x, lambda x: self.mha(x, x, x, src_mask)) # (batch, s_seq_len, d_model)
         output = self.add_norms[1](x, self.ffn) # (batch, s_seq_len, d_model)
         
@@ -127,7 +130,7 @@ class DecoderLayer(nn.Module):
         self.ffn = feed_forward_network
         self.add_norms = nn.ModuleList([AddNorm(d_model, dropout) for _ in range(3)])
     
-    def forward(self, x, enc_output, src_mask, tgt_mask):
+    def forward(self, x, enc_output, src_mask=None, tgt_mask=None):
         """forward pass for decoder layer module
 
         Args:
@@ -139,6 +142,11 @@ class DecoderLayer(nn.Module):
         Returns:
             tensor: output tensor of shape (batch, t_seq_len, d_model)
         """
+        if src_mask is not None and src_mask.device != x.device:
+            src_mask = src_mask.to(x.device)
+        if tgt_mask is not None and tgt_mask.device != x.device:
+            tgt_mask = tgt_mask.to(x.device)
+
         x = self.add_norms[0](x, lambda x: self.mmha(x, x, x, tgt_mask)) # (batch, t_seq_len, d_model)
         x = self.add_norms[1](x, lambda x: self.cmha(x, enc_output, enc_output, src_mask)) # (batch, t_seq_len, d_model)
         output = self.add_norms[2](x, self.ffn) # (batch, t_seq_len, d_model)
@@ -162,7 +170,7 @@ class Encoder(nn.Module):
         self.layers = layers
         self.norm = nn.LayerNorm(d_model)
 
-    def forward(self, x, src_mask):
+    def forward(self, x, src_mask=None):
         """forward pass for encoder module
 
         Args:
@@ -172,6 +180,9 @@ class Encoder(nn.Module):
         Returns:
             tensor: output tensor of shape (batch, s_seq_len, d_model)
         """
+        if src_mask is not None and src_mask.device != x.device:
+            src_mask = src_mask.to(x.device)
+
         for layer in self.layers:
             x = layer(x, src_mask)
         return self.norm(x) # (batch, s_seq_len, d_model)
@@ -193,7 +204,7 @@ class Decoder(nn.Module):
         self.layers = layers
         self.norm = nn.LayerNorm(d_model)
 
-    def forward(self, x, encoder_output, src_mask, tgt_mask):
+    def forward(self, x, encoder_output, src_mask=None, tgt_mask=None):
         """forward pass for decoder module
 
         Args:
@@ -205,6 +216,11 @@ class Decoder(nn.Module):
         Returns:
             tensor: output tensor of shape (batch, t_seq_len, d_model)
         """
+        if src_mask is not None and src_mask.device != x.device:
+            src_mask = src_mask.to(x.device)
+        if tgt_mask is not None and tgt_mask.device != x.device:
+            tgt_mask = tgt_mask.to(x.device)
+
         for layer in self.layers:
             x = layer(x, encoder_output, src_mask, tgt_mask)    
         return self.norm(x) # (batch, t_seq_len, d_model)

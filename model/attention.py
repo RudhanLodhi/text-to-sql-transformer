@@ -29,7 +29,7 @@ class MultiHeadAttention(nn.Module):
         
         self.w_o = nn.Linear(d_model, d_model) # output
 
-    def forward(self, query, key, value, mask):
+    def forward(self, query, key, value, mask=None):
         """forward pass for the multi-head attention mechanism
 
         Args:
@@ -41,6 +41,9 @@ class MultiHeadAttention(nn.Module):
         Returns:
             tensor: output tensor of shape (batch, seq_len, d_model)
         """
+        if mask is not None and mask.device != query.device:
+            mask = mask.to(query.device)
+
         Q = self.w_q(query) # (batch, seq_len, d_model) @ (d_model, d_model) -> (batch, seq_len, d_model)
         K = self.w_k(key) # //
         V = self.w_v(value) # //
