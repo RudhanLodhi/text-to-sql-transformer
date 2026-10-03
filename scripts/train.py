@@ -237,7 +237,7 @@ if __name__ == "__main__":
     plt.close()
 
     plt.figure()
-    plt.plot(range(1, 20000 + 1), lr_schedule[:20000], label="LR Schedule")
+    plt.plot(range(1, len(lr_schedule) + 1), lr_schedule, label="LR Schedule")
     plt.title("Learning Rate Schedule")
     plt.xlabel("Step")
     plt.ylabel("Learning Rate")
