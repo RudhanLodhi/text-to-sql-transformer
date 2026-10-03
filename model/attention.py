@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 
+
 class MultiHeadAttention(nn.Module):
     """multi-head attention mechanism
     """
@@ -22,12 +23,11 @@ class MultiHeadAttention(nn.Module):
         
         self.dropout = nn.Dropout(dropout)
         
+        self.w_q = nn.Linear(d_model, d_model) # query
         self.w_k = nn.Linear(d_model, d_model) # key
-        self.w_q = nn.Linear(d_model, d_model) # q
         self.w_v = nn.Linear(d_model, d_model) # value
         
         self.w_o = nn.Linear(d_model, d_model) # output
-        
 
     def forward(self, query, key, value, mask):
         """forward pass for the multi-head attention mechanism
@@ -41,7 +41,6 @@ class MultiHeadAttention(nn.Module):
         Returns:
             tensor: output tensor of shape (batch, seq_len, d_model)
         """
-        
         Q = self.w_q(query) # (batch, seq_len, d_model) @ (d_model, d_model) -> (batch, seq_len, d_model)
         K = self.w_k(key)   # //
         V = self.w_v(value) # //
@@ -54,17 +53,36 @@ class MultiHeadAttention(nn.Module):
         k = k.transpose(1, 2) # //
         v = v.transpose(1, 2) # //
         
-        att = q @ k.transpose(-2, -1) / math.sqrt(self.d_k) # (batch, h ,seq_len, d_k) @ (batch, h, d_k, seq_len) -> (batch, h, seq_len, seq_len)
+        score, _ = MultiHeadAttention.attention(q, k, v, mask, self.dropout) # (batch, h, seq_len, d_k)
+        score = score.transpose(1, 2).contigous().view(score.size(0), -1, self.d_model) # (batch, seq_len, d_model)
         
+        return self.w_o(score) # (batch, seq_len, d_model) @ (d_model, d_model) -> (batch, seq_len, d_model)
+
+    @staticmethod
+    def attention(q, k, v, mask, dropout: nn.Dropout):
+        """applies multi-head attention to the input tensors.
+        
+        Args:
+            q (tensor): query tensor of shape (batch, h, seq_len, d_k)
+            k (tensor): key tensor of shape (batch, h, seq_len, d_k)
+            v (tensor): value tensor of shape (batch, h, seq_len, d_k)
+            mask (tensor): mask tensor of shape (___)
+            dropout (tensor, optional): dropout layer to be applied on attention scores. Defaults to None.
+
+        Returns:
+            tensor: output tensor of shape (batch, h, seq_len, d_k) and attention scores of shape (batch, h, seq_len, seq_len)
+        """
+        d_k = q.size(-1)
+
+        att = q @ k.transpose(-2, -1) / math.sqrt(d_k) # (batch, h ,seq_len, d_k) @ (batch, h, d_k, seq_len) -> (batch, h, seq_len, seq_len)
+
         if mask is not None:
             att = att.masked_fill(mask == 0, float("-inf"))
         
         score = torch.softmax(att, dim=-1)
-        
-        if self.dropout is not None:
-            score = self.dropout(score)
-        
-        score = score @ v # (batch, h, seq_len, seq_len) @ (batch, h, seq_len, d_k) -> (batch, h, seq_len, d_k)
-        score = score.transpose(1, 2).contigous().view(score.size(0), -1, self.d_model) # (batch, seq_len, d_model)
-        
-        return self.w_o(score) # (batch, seq_len, d_model) @ (d_model, d_model) -> (batch, seq_len, d_model)
+
+        if dropout is not None:
+            score = dropout(score)
+
+        # score @ v (batch, h, seq_len, seq_len) @ (batch, h, seq_len, d_k) -> (batch, h, seq_len, d_k)
+        return score @ v, score
