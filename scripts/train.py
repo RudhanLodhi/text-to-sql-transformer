@@ -162,6 +162,14 @@ if __name__ == "__main__":
     dev_stats = dataset_statistics(dev_dl, f"{DATASET}/dev_pairs.jsonl")
     test_stats = dataset_statistics(test_dl, f"{DATASET}/test_pairs.jsonl")
 
+    with open(RESULTS / "data.md", "w", encoding="utf-8") as f:
+            f.write("| | Train | Dev | Test |\n")
+            f.write("|---|---|---|---|\n")
+            f.write(f"| Pairs | {train_stats['pairs']} | {dev_stats['pairs']} | {test_stats['pairs']} |\n")
+            f.write(f"| Mean / max source length (tokens) | {train_stats['mean_src']:.2f} / {train_stats['max_src']} | {dev_stats['mean_src']:.2f} / {dev_stats['max_src']} | {test_stats['mean_src']:.2f} / {test_stats['max_src']} |\n")
+            f.write(f"| Mean / max target length (tokens) | {train_stats['mean_tgt']:.2f} / {train_stats['max_tgt']} | {dev_stats['mean_tgt']:.2f} / {dev_stats['max_tgt']} | {test_stats['mean_tgt']:.2f} / {test_stats['max_tgt']} |\n")
+            f.write(f"| Pairs dropped as too long | {train_stats['dropped']} | - | - |\n")
+
     model = build_transformer(
         vocab_size=sp.get_piece_size(),
         max_len=max_len,
@@ -172,6 +180,23 @@ if __name__ == "__main__":
         dropout=dropout,
         device=device
     )
+
+    positional_encoding = model.input_layer.pos.pe[0, :100, :].detach().cpu().numpy()
+    plt.figure(figsize=(16, 6))
+    sns.heatmap(
+        positional_encoding,
+        cmap="viridis",
+        xticklabels=32,
+        yticklabels=10,
+        cbar_kws={"label": "Encoding value"},
+    )
+    plt.title("Sinusoidal Positional Encoding (100 positions x 256 dimensions)")
+    plt.xlabel("Embedding dimension")
+    plt.ylabel("Position")
+    plt.tight_layout()
+    plt.savefig(FIGURES / "positional_encoding_heatmap.png", dpi=150)
+    plt.close()
+    
     optimizer = Adam(
         model.parameters(),
         lr=1.0,
@@ -199,16 +224,15 @@ if __name__ == "__main__":
     for epoch in range(1, num_epochs + 1):
         print(f"Epoch {epoch}/{num_epochs}")
 
-        train_loss = run_epoch(model, train_dl, optimizer, criterion, schedular, device, 1.0, PAD_ID, clip, lr_schedule, True)
+        train_loss = run_epoch(model, train_dl, optimizer, criterion, schedular, device, tf_ratio(epoch), PAD_ID, clip, lr_schedule, True)
         with torch.no_grad():
             dev_loss = run_epoch(model, dev_dl, optimizer, criterion, schedular, device, 0.0, PAD_ID, clip, lr_schedule, False)
-            tf_loss = run_epoch(model, dev_dl, optimizer, criterion, schedular, device, 1.0, PAD_ID, clip, lr_schedule, False)
 
         epoch_train_losses.append(train_loss)
         epoch_valid_losses.append(dev_loss)
 
         print(
-            f"Train Loss: {train_loss:.4f} | Valid Loss: {dev_loss:.4f} | TF Loss: {tf_loss:.4f} | "
+            f"Train Loss: {train_loss:.4f} | Valid Loss: {dev_loss:.4f} | "
             f"TF Ratio: {tf_ratio(epoch):.2f} | "
             f"LR: {optimizer.param_groups[0]['lr']:.2e}"
         )
@@ -246,30 +270,6 @@ if __name__ == "__main__":
     plt.legend()
     plt.savefig(FIGURES / "learning_rate_schedule.png")
     plt.close()
-
-    positional_encoding = model.input_layer.pos.pe[0, :100, :].detach().cpu().numpy()
-    plt.figure(figsize=(16, 6))
-    sns.heatmap(
-        positional_encoding,
-        cmap="viridis",
-        xticklabels=32,
-        yticklabels=10,
-        cbar_kws={"label": "Encoding value"},
-    )
-    plt.title("Sinusoidal Positional Encoding (100 positions x 256 dimensions)")
-    plt.xlabel("Embedding dimension")
-    plt.ylabel("Position")
-    plt.tight_layout()
-    plt.savefig(FIGURES / "positional_encoding_heatmap.png", dpi=150)
-    plt.close()
-
-    with open(RESULTS / "data.md", "w", encoding="utf-8") as f:
-        f.write("| | Train | Dev | Test |\n")
-        f.write("|---|---|---|---|\n")
-        f.write(f"| Pairs | {train_stats['pairs']} | {dev_stats['pairs']} | {test_stats['pairs']} |\n")
-        f.write(f"| Mean / max source length (tokens) | {train_stats['mean_src']:.2f} / {train_stats['max_src']} | {dev_stats['mean_src']:.2f} / {dev_stats['max_src']} | {test_stats['mean_src']:.2f} / {test_stats['max_src']} |\n")
-        f.write(f"| Mean / max target length (tokens) | {train_stats['mean_tgt']:.2f} / {train_stats['max_tgt']} | {dev_stats['mean_tgt']:.2f} / {dev_stats['max_tgt']} | {test_stats['mean_tgt']:.2f} / {test_stats['max_tgt']} |\n")
-        f.write(f"| Pairs dropped as too long | {train_stats['dropped']} | - | - |\n")
 
     with open(RESULTS / "model_training.md", "w", encoding="utf-8") as f:
         f.write("| | |\n")

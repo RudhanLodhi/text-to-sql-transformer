@@ -78,7 +78,7 @@ class Transformer(nn.Module):
 
         Args:
             src (tensor): source token ids of shape (batch, s_seq_len)
-            src_mask (tensor): source sequence mask tensor of shape (___)
+            src_mask (tensor): source sequence mask tensor of shape (batch, 1, 1, s_seq_len)
         
         Returns:
             tensor: output tensor of shape (batch, s_seq_len, d_model)
@@ -92,8 +92,8 @@ class Transformer(nn.Module):
         Args:
             tgt (tensor): source token ids of shape (batch, t_seq_len)
             enc_output (tensor): target token ids of shape (batch, s_seq_len, d_model)
-            src_mask (tensor): source sequence mask tensor of shape (___)
-            tgt_mask (tensor): target sequence mask tensor of shape (___)
+            src_mask (tensor): source sequence mask tensor of shape (batch, 1, 1, s_seq_len)
+            tgt_mask (tensor): target sequence mask tensor of shape (batch, 1, t_seq_len, t_seq_len)
 
         Returns:
             tensor: output tensor of shape (batch, t_seq_len, d_model)
@@ -112,7 +112,7 @@ class Transformer(nn.Module):
         """
         proj_weights = self.embedding.emb.weight.t() # (vocab_size, d_model) -> (d_model, vocab_size)
         logits = x @ proj_weights # (batch, t_seq_len, d_model) @ (d_model, vocab_size) -> (batch, t_seq_len, vocab_size)
-        return logits
+        return torch.log_softmax(logits)
 
 
 def build_transformer(vocab_size: int=8000, max_len: int=512, d_model: int=256, h: int=4, N: int=3, d_ff: int=1024, dropout: float=0.1, device=None):

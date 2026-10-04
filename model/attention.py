@@ -36,7 +36,7 @@ class MultiHeadAttention(nn.Module):
             query (tensor): query tensor of shape (batch, seq_len, d_model)
             key (tensor): key tensor of shape (batch, seq_len, d_model)
             value (tensor): value tensor of shape (batch, seq_len, d_model)
-            mask (tensor): mask tensor of shape (___)
+            mask (tensor): mask tensor of shape (batch, 1, 1, seq_len) or (batch, 1, seq_len, seq_len)
 
         Returns:
             tensor: output tensor of shape (batch, seq_len, d_model)
@@ -69,7 +69,7 @@ class MultiHeadAttention(nn.Module):
             q (tensor): query tensor of shape (batch, h, seq_len, d_k)
             k (tensor): key tensor of shape (batch, h, seq_len, d_k)
             v (tensor): value tensor of shape (batch, h, seq_len, d_k)
-            mask (tensor): mask tensor of shape (___)
+            mask (tensor): mask tensor of shape (batch, 1, 1, seq_len) or (batch, 1, seq_len, seq_len)
             dropout (tensor, optional): dropout layer to be applied on attention scores. Defaults to None.
 
         Returns:

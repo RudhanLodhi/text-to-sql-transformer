@@ -95,7 +95,7 @@ class EncoderLayer(nn.Module):
 
         Args:
             x (tensor): input tensor of shape (batch, s_seq_len, d_model)
-            seq_mask (tensor): sequence mask tensor of shape (___)
+            seq_mask (tensor): sequence mask tensor of shape (batch, 1, 1, s_seq_len)
 
         Returns:
             tensor: output tensor of shape (batch, s_seq_len, d_model)
@@ -136,8 +136,8 @@ class DecoderLayer(nn.Module):
         Args:
             x (tensor): input tensor of shape (batch, t_seq_len, d_model)
             enc_output (tensor): encoder output tensor of shape (batch, s_seq_len, d_model)
-            src_mask (tensor): source mask tensor of shape (___)
-            tgt_mask (tensor): target mask tensor of shape (___)
+            src_mask (tensor): source mask tensor of shape (batch, 1, 1, s_seq_len)
+            tgt_mask (tensor): target mask tensor of shape (batch, 1, t_seq_len, t_seq_len)
 
         Returns:
             tensor: output tensor of shape (batch, t_seq_len, d_model)
@@ -175,7 +175,7 @@ class Encoder(nn.Module):
 
         Args:
             x (tensor): input tensor of shape (batch, s_seq_len, d_model)
-            src_mask (tensor): sequence mask tensor of shape (___)
+            src_mask (tensor): sequence mask tensor of shape (batch, 1, 1, s_seq_len)
 
         Returns:
             tensor: output tensor of shape (batch, s_seq_len, d_model)
@@ -210,8 +210,8 @@ class Decoder(nn.Module):
         Args:
             x (tensor): input tensor of shape (batch, t_seq_len, d_model)
             enc_output (tensor): encoder output tensor of shape (batch, s_seq_len, d_model)
-            src_mask (tensor): source sequence mask tensor of shape (___)
-            tgt_mask (tensor): target sequence mask tensor of shape (___)
+            src_mask (tensor): source sequence mask tensor of shape (batch, 1, 1, s_seq_len)
+            tgt_mask (tensor): target sequence mask tensor of shape (batch, 1, t_seq_len, t_seq_len)
 
         Returns:
             tensor: output tensor of shape (batch, t_seq_len, d_model)
