@@ -199,15 +199,16 @@ if __name__ == "__main__":
     for epoch in range(1, num_epochs + 1):
         print(f"Epoch {epoch}/{num_epochs}")
 
-        train_loss = run_epoch(model, train_dl, optimizer, criterion, schedular, device, tf_ratio(epoch), PAD_ID, clip, lr_schedule, True)
+        train_loss = run_epoch(model, train_dl, optimizer, criterion, schedular, device, 1.0, PAD_ID, clip, lr_schedule, True)
         with torch.no_grad():
             dev_loss = run_epoch(model, dev_dl, optimizer, criterion, schedular, device, 0.0, PAD_ID, clip, lr_schedule, False)
+            tf_loss = run_epoch(model, dev_dl, optimizer, criterion, schedular, device, 1.0, PAD_ID, clip, lr_schedule, False)
 
         epoch_train_losses.append(train_loss)
         epoch_valid_losses.append(dev_loss)
 
         print(
-            f"Train Loss: {train_loss:.4f} | Valid Loss: {dev_loss:.4f} | "
+            f"Train Loss: {train_loss:.4f} | Valid Loss: {dev_loss:.4f} | TF Loss: {tf_loss:.4f} | "
             f"TF Ratio: {tf_ratio(epoch):.2f} | "
             f"LR: {optimizer.param_groups[0]['lr']:.2e}"
         )
