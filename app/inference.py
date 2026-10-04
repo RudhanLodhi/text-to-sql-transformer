@@ -1,8 +1,6 @@
 from pathlib import Path
-
 import sentencepiece as spm
 import torch
-
 from model.transformer import build_transformer
 from scripts.data_prep import encode_source
 from scripts.decode import (
@@ -12,7 +10,6 @@ from scripts.decode import (
     to_readable_sql,
 )
 from scripts.tokenizer import BOS_ID, EOS_ID, TOKENIZER
-
 
 class TextToSQL:
     def __init__(self, device=None):

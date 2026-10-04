@@ -4,7 +4,6 @@ const generateButton = document.querySelector('#generate');
 const status = document.querySelector('#status');
 const greedy = document.querySelector('#greedy');
 const beam = document.querySelector('#beam');
-
 generateButton.addEventListener('click', async () => {
     status.textContent = 'Generating SQL...';
     generateButton.disabled = true;
