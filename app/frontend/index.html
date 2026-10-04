@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Text-to-SQL Transformer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <main class="shell">
+        <header>
+            <p class="eyebrow">TEXT-TO-SQL TRANSFORMER</p>
+            <h1>Generate SQL</h1>
+            <p class="intro">Ask a question about your table and provide its column names.</p>
+        </header>
+
+        <section class="panel">
+            <label for="question">Question</label>
+            <textarea id="question" placeholder="Example: What is the maximum age?"></textarea>
+            <label for="columns">Column names</label>
+            <textarea id="columns" class="columns" placeholder="name, age, city"></textarea>
+            <div class="actions">
+                <button id="generate" class="primary" type="button">Generate SQL</button>
+            </div>
+            <p id="status" class="status" role="status"></p>
+        </section>
+
+        <section class="results" aria-live="polite">
+            <article class="result-card accent-red">
+                <div class="result-heading"><span>GREEDY</span><small>beam = 1</small></div>
+                <p id="greedy">SQL will appear here</p>
+            </article>
+            <article class="result-card accent-green">
+                <div class="result-heading"><span>PARSED QUERY</span><small>model output</small></div>
+                <p id="beam">Parsed query will appear here</p>
+            </article>
+        </section>
+    </main>
+    <script src="app.js"></script>
+</body>
+
+</html>

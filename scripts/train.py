@@ -32,7 +32,6 @@ clip = 5
 num_epochs = 20
 warmup = 4000
 
-
 def lr_schedular(step):
     """transformer paper lr schedular
 

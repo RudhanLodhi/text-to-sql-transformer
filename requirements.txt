@@ -6,3 +6,5 @@ tqdm
 tabulate
 matplotlib
 seaborn
+fastapi
+uvicorn

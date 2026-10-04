@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from model.attention import MultiHeadAttention
 
-
 class AddNorm(nn.Module):
     """x -> sublayer(x) -> dropout -> add(x) -> norm
     """
