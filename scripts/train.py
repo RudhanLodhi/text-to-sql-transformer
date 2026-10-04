@@ -29,23 +29,8 @@ dropout = 0.1
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 clip = 5
-tf_start = 0.9
-tf_end = 0.3
 num_epochs = 20
-
 warmup = 4000
-
-
-def tf_ratio(epoch):
-    """calculate the teacher forcing ratio for a given epoch
-
-    Args:
-        epoch (int): the current epoch
-
-    Returns:
-        float: the teacher forcing ratio for the given epoch
-    """
-    return tf_start + (tf_end - tf_start) * (epoch / num_epochs)
 
 
 def lr_schedular(step):
@@ -58,7 +43,7 @@ def lr_schedular(step):
     return (d_model ** -0.5) * min(step ** -0.5, step * (warmup ** -1.5))
 
 
-def run_epoch(model, dataloader, optimizer, criterion, schedular, device, tf, pad_idx, clip, lr_schedule, is_training=True):
+def run_epoch(model, dataloader, optimizer, criterion, schedular, device, pad_idx, clip, lr_schedule, is_training=True):
     """run one complete training or validation epoch
 
     Args:
@@ -68,7 +53,6 @@ def run_epoch(model, dataloader, optimizer, criterion, schedular, device, tf, pa
         criterion (torch.nn.Module): token-level loss function, configured to ignore padding ids
         schedular (torch.optim.lr_scheduler.LambdaLR): learning-rate scheduler stepped after each optimizer update
         device (str or torch.device): device on which tensors and the model are placed
-        tf (float): teacher-forcing probability passed to model
         pad_idx (int): padding token id excluded from loss aggregation
         clip (float): maximum gradient norm used during training
         lr_schedule (list[float]): List to which each training-step learning rate is appended for plotting
@@ -93,7 +77,7 @@ def run_epoch(model, dataloader, optimizer, criterion, schedular, device, tf, pa
         tgt = tgt.to(device)
 
         target = tgt[:, 1:]
-        logits = model(src, tgt, tf, pad_idx)
+        logits = model(src, tgt, pad_idx)
         loss = criterion(
             logits.contiguous().view(-1, logits.size(-1)),
             target.contiguous().view(-1),
@@ -122,7 +106,6 @@ def run_epoch(model, dataloader, optimizer, criterion, schedular, device, tf, pa
 
             postfix.update({
                 "lr": f"{lr:.2e}",
-                "tf": f"{tf:.2f}",
             })
 
         tqdm_bar.set_postfix(postfix)
@@ -224,16 +207,15 @@ if __name__ == "__main__":
     for epoch in range(1, num_epochs + 1):
         print(f"Epoch {epoch}/{num_epochs}")
 
-        train_loss = run_epoch(model, train_dl, optimizer, criterion, schedular, device, tf_ratio(epoch), PAD_ID, clip, lr_schedule, True)
+        train_loss = run_epoch(model, train_dl, optimizer, criterion, schedular, device, PAD_ID, clip, lr_schedule, True)
         with torch.no_grad():
-            dev_loss = run_epoch(model, dev_dl, optimizer, criterion, schedular, device, 0.0, PAD_ID, clip, lr_schedule, False)
+            dev_loss = run_epoch(model, dev_dl, optimizer, criterion, schedular, device, PAD_ID, clip, [], False)
 
         epoch_train_losses.append(train_loss)
         epoch_valid_losses.append(dev_loss)
 
         print(
             f"Train Loss: {train_loss:.4f} | Valid Loss: {dev_loss:.4f} | "
-            f"TF Ratio: {tf_ratio(epoch):.2f} | "
             f"LR: {optimizer.param_groups[0]['lr']:.2e}"
         )
 
@@ -266,7 +248,6 @@ if __name__ == "__main__":
     plt.title("Learning Rate Schedule")
     plt.xlabel("Step")
     plt.ylabel("Learning Rate")
-    plt.xticks([i * 1000 for i in range(0, 21)])
     plt.legend()
     plt.savefig(FIGURES / "learning_rate_schedule.png")
     plt.close()

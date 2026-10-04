@@ -26,52 +26,33 @@ class Transformer(nn.Module):
         self.embedding = embedding
         self.input_layer = input_layer
 
-    def forward(self, src, tgt, tf: float=0.5, pad_id: int=0):
+    def forward(self, src, tgt, pad_id: int=0):
         """end-to-end transformer pass
 
         Args:
             src (tensor): source token ids of shape (batch, s_seq_len)
             tgt (tensor): target token ids including BOS/EOS of shape (batch, t_seq_len)
-            tf (float, optional): probability of using the ground-truth previous token. Defaults to 0.5.
             pad_id (int, optional): padding token id. Defaults to 0.
 
         Returns:
             tensor: logits of shape (batch, t_seq_len, vocab_size)
         """
+        dec_input = tgt[:, :-1] # from BOS to end except EOS
+        tgt_len = dec_input.size(1)
+
         src_mask = (src != pad_id).unsqueeze(1).unsqueeze(1) # (batch, 1, 1, s_seq_len)
-        enc_output = self.encode(src, src_mask)
+        tgt_mask = (dec_input != pad_id).unsqueeze(1).unsqueeze(1) & \
+            torch.tril(
+                torch.ones(
+                    tgt_len, tgt_len,
+                    dtype=torch.bool, device=dec_input.device,
+                ) # (t_seq_len, t_seq_len)
+            ).view(1, 1, tgt_len, tgt_len) # (1, 1, t_seq_len, t_seq_len)
+        # (batch, 1, 1, t_seq_len) & (1, 1, t_seq_len, t_seq_len) -> (batch, 1, t_seq_len, t_seq_len)
 
-        tgt_length = tgt.size(1) - 1 # tokens to be predicted by model after the first input BOS
-        dec_input = tgt[:, :1] # first BOS token as decoder input, shape becomes (batch, 1)
-        logits = []
-
-        for i in range(tgt_length):
-            seq_len = dec_input.shape[1] # current_t_seq_len
-            tgt_mask = (dec_input != pad_id).unsqueeze(1).unsqueeze(1) & \
-                torch.tril(
-                    torch.ones(
-                        seq_len, seq_len,
-                        dtype=torch.bool, device=dec_input.device,
-                    ) # (current_t_seq_len, current_t_seq_len)
-                ).view(1, 1, seq_len, seq_len) # (1, 1, current_t_seq_len, current_t_seq_len)
-            # (batch, 1, 1, current_t_seq_len) & (1, 1, current_t_seq_len, current_t_seq_len) -> (batch, 1, current_t_seq_len, current_t_seq_len)
-            
-            dec_output = self.decode(dec_input, enc_output, src_mask, tgt_mask) # (batch, current_t_seq_len, d_model)
-            step_logits = self.projection(dec_output[:, -1:, :]) # get logits for the last token (batch, 1, vocab_size)
-            logits.append(step_logits)
-            
-            predicted_token = step_logits.argmax(dim=-1)
-
-            if torch.rand(1).item() < tf:
-                next_token = tgt[:, i + 1:i + 2]
-            else:
-                next_token = predicted_token
-
-            dec_input = torch.cat([dec_input, next_token], dim=1)
-
-        logits = torch.cat(logits, dim=1) # (batch, t_seq_len, d_model)
-        return logits
-
+        enc_output = self.encode(src, src_mask) # (batch, s_seq_len, d_model)
+        dec_output = self.decode(dec_input, enc_output, src_mask, tgt_mask) # (batch, t_seq_len, d_model)
+        return self.projection(dec_output) # (batch, t_seq_len, vocab_size)
 
     def encode(self, src, src_mask):
         """forward pass for encoder module
