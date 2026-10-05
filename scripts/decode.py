@@ -144,7 +144,7 @@ def to_readable_sql(parsed_query, column_names):
     selected = column_names[query["sel"]]
     aggregate = AGG_OPS[query["agg"]]
     select_clause = f"{aggregate}({selected})" if aggregate else selected
-    sql = f"SELECT {select_clause}"
+    sql = f"SELECT {select_clause} FROM table"
 
     if query["conds"]:
         conditions = [
