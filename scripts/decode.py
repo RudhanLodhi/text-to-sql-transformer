@@ -1,165 +1,165 @@
 import json
+import re
 from pathlib import Path
-
-import torch
 import sentencepiece as spm
-
+import torch
 from model.transformer import build_transformer
-from scripts.data_prep import AGG_OPS, COND_OPS, DATASET
-from scripts.dataset import make_loader
-from scripts.tokenizer import BOS_ID, EOS_ID, TOKENIZER
-
-RESULTS = Path("results")
-RESULTS.mkdir(exist_ok=True, parents=True)
-
-def generate_mask(size):
-    mask = torch.tril(torch.ones(size, size)).unsqueeze(0).unsqueeze(0)
-    return mask
+from scripts.data_prep import AGG_OPS, COND_OPS, DATASET, encode_source, load_split
+from scripts.tokenizer import BOS_ID, EOS_ID, PAD_ID, TOKENIZER
 
 
-def greedy_decode(model, src, src_mask, max_len=64):
+RESULTS = Path("results"); RESULTS.mkdir(exist_ok=True, parents=True)
+CHECKPOINT = Path("artifacts/checkpoints/best.pt")
+MAX_DECODE_LEN = 64
+COLUMN_TOKEN = re.compile(r"^<c(\d+)>$")
+
+
+def _mask(size, device):
+    return torch.tril(
+        torch.ones(size, size, dtype=torch.bool, device=device)
+    ).unsqueeze(0).unsqueeze(0)
+
+
+def _length_norm_score(item, alpha=0.7):
+    tokens, score = item[0], item[1]
+    lp = ((5 + len(tokens)) / 6) ** alpha
+    return score / lp
+
+
+@torch.no_grad()
+def decode(model, src, beam_size=1, max_len=MAX_DECODE_LEN):
+    """src (1, s_seq_len)
+    """
+    if beam_size < 1:
+        raise ValueError("beam_size must be at least 1")
+
     model.eval()
-    with torch.no_grad():
-        memory = model.encoder(src, src_mask)
-        tgt = torch.tensor([[BOS_ID]], device=src.device)
+    device = src.device
+    src_mask = (src != PAD_ID).unsqueeze(1).unsqueeze(1) # (1, 1, 1, s_seq_len)
+    memory = model.encode(src, src_mask) # (1, s_seq_len, d_model)
+    beams = [(torch.tensor([[BOS_ID]], device=device), 0.0)] # (1, t_seq_len=1)
 
-        for _ in range(max_len):
-            tgt_mask = generate_mask(tgt.size(1)).to(src.device)
-            out = model.decoder(tgt, memory, src_mask, tgt_mask)
-            logits = model.projection(out)[:, -1, :]
+    for _ in range(max_len - 1):
+        candidates = []
 
-            next_token = torch.argmax(logits, dim=-1)
-            tgt = torch.cat([tgt, next_token.unsqueeze(0)], dim=1)
+        for sequence, score in beams:
+            if sequence[0, -1].item() == EOS_ID:
+                candidates.append((sequence, score))
+                continue
 
-            if next_token.item() == EOS_ID:
-                break
+            tgt_mask = _mask(sequence.size(1), device) # (1, 1, t_seq_len, t_seq_len)
+            decoder_output = model.decode(
+                sequence,
+                memory,
+                src_mask,
+                tgt_mask,
+            ) # (1, t_seq_len, d_model)
+            log_probs = model.projection(
+                decoder_output[:, -1:, :] # (1, 1, d_model)
+            ).squeeze(1) # (1, vocab_size)
+            token_scores, token_ids = torch.topk(log_probs, beam_size, dim=-1)
 
-        return tgt.squeeze(0).tolist()
+            for token_score, token_id in zip(token_scores[0], token_ids[0]):
+                candidates.append((
+                    torch.cat((sequence, token_id.view(1, 1)), dim=1),
+                    score + token_score.item(),
+                ))
 
+        beams = sorted(
+            candidates,
+            key=_length_norm_score,
+            reverse=True,
+        )[:beam_size]
 
-def beam_search(model, src, src_mask, beam_size=4, max_len=64):
-    model.eval()
-    with torch.no_grad():
-        memory = model.encoder(src, src_mask)
-        beams = [(0.0, [BOS_ID])]
+        if all(sequence[0, -1].item() == EOS_ID for sequence, _ in beams):
+            break
 
-        for _ in range(max_len):
-            all_candidates = []
-
-            for score, seq in beams:
-                if seq[-1] == EOS_ID:
-                    all_candidates.append((score, seq))
-                    continue
-
-                tgt_tensor = torch.tensor([seq], device=src.device)
-                tgt_mask = generate_mask(tgt_tensor.size(1)).to(src.device)
-
-                out = model.decoder(tgt_tensor, memory, src_mask, tgt_mask)
-                logits = model.projection(out)[:, -1, :]
-                probs = logits.squeeze()
-
-                top_probs, top_idx = torch.topk(probs, beam_size)
-
-                for i in range(beam_size):
-                    new_score = score + top_probs[i].item()
-                    new_seq = seq + [top_idx[i].item()]
-                    all_candidates.append((new_score, new_seq))
-
-            ordered = sorted(all_candidates, key=lambda x: x[0], reverse=True)
-            beams = ordered[:beam_size]
-
-            if all(seq[-1] == EOS_ID for _, seq in beams):
-                break
-
-        return beams[0][1]
+    return max(
+        beams,
+        key=_length_norm_score,
+    )[0][0].tolist()
 
 
-def parse_prediction(decoded_str):
-    try:
-        decoded_str = decoded_str.replace("select ", "").strip()
-        agg_idx = 0
-
-        for i, agg in enumerate(AGG_OPS):
-            if agg != "" and decoded_str.startswith(agg.lower() + " "):
-                agg_idx = i
-                decoded_str = decoded_str[len(agg):].strip()
-                break
-
-        sel_str = decoded_str.split(" ")[0]
-        sel_idx = int(sel_str.replace("<c", "").replace(">", ""))
-
-        conds = []
-        if " where " in decoded_str:
-            where_part = decoded_str.split(" where ")[1]
-            conditions = where_part.split(" and ")
-
-            for cond in conditions:
-                parts = cond.split(" ", 2)
-                col_idx = int(parts[0].replace("<c", "").replace(">", ""))
-                op_idx = COND_OPS.index(parts[1])
-                val = parts[2]
-                conds.append([col_idx, op_idx, val])
-
-        return {"sel": sel_idx, "agg": agg_idx, "conds": conds}
-
-    except Exception:
-        return None
+def greedy_decode(model, src, max_len=MAX_DECODE_LEN):
+    return decode(model, src, beam_size=1, max_len=max_len)
 
 
-def export_predictions(model, dataloader, sp, output_path, use_beam=False):
-    """Write one JSON line per example."""
-    with open(output_path, "w", encoding="utf-8") as f:
-        for batch in dataloader:
-            src, src_mask = batch
+def beam_search(model, src, beam_size=4, max_len=MAX_DECODE_LEN):
+    return decode(model, src, beam_size=beam_size, max_len=max_len)
 
-            if use_beam:
-                predicted_ids = beam_search(model, src, src_mask)
-            else:
-                predicted_ids = greedy_decode(model, src, src_mask)
 
-            clean_ids = [idx for idx in predicted_ids if idx not in (BOS_ID, EOS_ID)]
-            decoded_str = sp.decode(clean_ids)
-            parsed_dict = parse_prediction(decoded_str)
+def parse_prediction(text):
+    tokens = text.lower().split()
+    if not tokens or tokens[0] != "select":
+        raise ValueError("prediction must start with select")
 
-            if parsed_dict is None:
-                json_line = {"error": "parse"}
-            else:
-                json_line = {"query": parsed_dict}
+    index = 1
+    agg = 0
+    if index < len(tokens) and tokens[index].upper() in AGG_OPS[1:]:
+        agg = AGG_OPS.index(tokens[index].upper())
+        index += 1
 
-            f.write(json.dumps(json_line) + "\n")
+    if index >= len(tokens):
+        raise ValueError("missing selected column")
+    selected = COLUMN_TOKEN.fullmatch(tokens[index])
+    if selected is None:
+        raise ValueError("invalid selected column")
+    query = {"sel": int(selected.group(1)), "agg": agg, "conds": []}
+    index += 1
+
+    while index < len(tokens):
+        if tokens[index] not in {"where", "and"}:
+            raise ValueError("expected where or and")
+        index += 1
+
+        if index + 2 >= len(tokens):
+            raise ValueError("incomplete condition")
+        column = COLUMN_TOKEN.fullmatch(tokens[index])
+        if column is None:
+            raise ValueError("invalid condition column")
+        index += 1
+
+        if tokens[index] not in COND_OPS:
+            raise ValueError("invalid condition operator")
+        operator = COND_OPS.index(tokens[index])
+        index += 1
+
+        value_start = index
+        while index < len(tokens) and tokens[index] not in {"where", "and"}:
+            index += 1
+        if value_start == index:
+            raise ValueError("empty condition value")
+
+        query["conds"].append([
+            int(column.group(1)),
+            operator,
+            " ".join(tokens[value_start:index]),
+        ])
+
+    return query
 
 
 def to_readable_sql(parsed_query, column_names):
-    if "error" in parsed_query:
-        return "ERROR: Could not parse model output into SQL."
+    query = parsed_query.get("query", parsed_query)
+    selected = column_names[query["sel"]]
+    aggregate = AGG_OPS[query["agg"]]
+    select_clause = f"{aggregate}({selected})" if aggregate else selected
+    sql = f"SELECT {select_clause}"
 
-    q = parsed_query["query"]
-    sel_col_name = column_names[q["sel"]]
-    agg_op = AGG_OPS[q["agg"]]
-
-    if agg_op == "":
-        sql = f"SELECT {sel_col_name}"
-    else:
-        sql = f"SELECT {agg_op}({sel_col_name})"
-
-    if len(q["conds"]) > 0:
-        sql += " WHERE "
-        cond_strings = []
-        for col_idx, op_idx, val in q["conds"]:
-            col_name = column_names[col_idx]
-            op_symbol = COND_OPS[op_idx]
-            cond_strings.append(f"{col_name} {op_symbol} '{val}'")
-
-        sql += " AND ".join(cond_strings)
+    if query["conds"]:
+        conditions = [
+            f"{column_names[column]} {COND_OPS[operator]} "
+            f"'{str(value).replace(chr(39), chr(39) * 2)}'"
+            for column, operator, value in query["conds"]
+        ]
+        sql += " WHERE " + " AND ".join(conditions)
 
     return sql
 
 
-def load_model(device):
-    model_path = Path("artifacts/checkpoints/best.pt")
-    sp = spm.SentencePieceProcessor(model_file=f"{TOKENIZER}/sql_sp.model")
+def load_model(device, tokenizer):
     model = build_transformer(
-        vocab_size=sp.get_piece_size(),
+        vocab_size=tokenizer.get_piece_size(),
         max_len=512,
         d_model=256,
         h=4,
@@ -168,61 +168,58 @@ def load_model(device):
         dropout=0.1,
         device=device,
     )
-
-    if model_path.exists():
-        checkpoint = torch.load(model_path, map_location=device)
-        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-            checkpoint = checkpoint["model_state_dict"]
-        model.load_state_dict(checkpoint)
-
+    checkpoint = torch.load(CHECKPOINT, map_location=device)
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        checkpoint = checkpoint["model_state_dict"]
+    model.load_state_dict(checkpoint)
     model.eval()
-    return model, sp
-
-
-def main():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    results_dir = RESULTS
-
-    tokenizer_path = Path(f"{TOKENIZER}/sql_sp.model")
-    if not tokenizer_path.exists():
-        status = {
-            "status": "missing tokenizer",
-            "message": "Run scripts/tokenizer.py to generate artifacts/tokenizer/sql_sp.model before decoding.",
-            "output_dir": str(results_dir),
-        }
-        output_path = results_dir / "decode_status.json"
-        output_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
-        print(f"Tokenizer not found. Wrote status to {output_path}")
-        return
-
-    test_path = DATASET / "test_pairs.jsonl"
-    model, sp = load_model(device)
-
-    if test_path.exists():
-        dataloader = make_loader(str(test_path), sp, train=False, batch_size=1)
-        output_path = results_dir / "decode_predictions.jsonl"
-        export_predictions(model, dataloader, sp, str(output_path))
-        print(f"Saved predictions to {output_path}")
-        return
-
-    sample_question = "what is the max age"
-    sample_source = f"{sample_question.strip()} <sep> <c0> name <c1> age <c2> city".lower()
-    sample_ids = sp.encode(sample_source)
-    src = torch.tensor([sample_ids], dtype=torch.long, device=device)
-    src_mask = (src != 0).unsqueeze(1).unsqueeze(1)
-
-    prediction_ids = greedy_decode(model, src, src_mask)
-    clean_ids = [idx for idx in prediction_ids if idx not in (BOS_ID, EOS_ID)]
-    prediction = sp.decode(clean_ids)
-
-    output = {
-        "source": sample_source,
-        "prediction": prediction,
-    }
-    output_path = results_dir / "decode_sample.json"
-    output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
-    print(f"Saved sample decode output to {output_path}")
+    return model
 
 
 if __name__ == "__main__":
-    main()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    tokenizer = spm.SentencePieceProcessor(
+        model_file=f"{TOKENIZER}/sql_sp.model"
+    )
+    model = load_model(device, tokenizer)
+
+    for split in ("dev", "test"):
+        examples, tables = load_split(split)
+
+        for name, beam_size in (
+            ("greedy", 1),
+            ("beam", 4),
+        ):
+            output_path = RESULTS / f"{split}_{name}.jsonl"
+
+            with output_path.open("w", encoding="utf-8") as output_file:
+                for example in examples:
+                    header = tables[example["table_id"]]["header"]
+                    source = encode_source(example["question"], header)
+                    source_ids = tokenizer.encode(source) + [EOS_ID]
+                    src = torch.tensor(
+                        [source_ids],
+                        dtype=torch.long,
+                        device=device,
+                    )
+
+                    try:
+                        predicted_ids = decode(
+                            model,
+                            src,
+                            beam_size=beam_size,
+                        )
+                        predicted_ids = [
+                            token for token in predicted_ids
+                            if token not in {BOS_ID, EOS_ID, PAD_ID}
+                        ]
+                        prediction = tokenizer.decode(predicted_ids)
+                        output = {"query": parse_prediction(prediction)}
+                    except (IndexError, KeyError, ValueError, RuntimeError):
+                        output = {"error": "parse"}
+
+                    output_file.write(
+                        json.dumps(output, ensure_ascii=False) + "\n"
+                    )
+
+            print(f"Saved predictions to {output_path}")

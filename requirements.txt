@@ -7,4 +7,5 @@ tabulate
 matplotlib
 seaborn
 fastapi
+jinja2
 uvicorn
