@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
@@ -20,8 +21,20 @@ WIKISQL = ROOT / "WikiSQL"
 OFFICIAL_EVALUATOR = WIKISQL / "evaluate.py"
 
 
+def prediction_record(line):
+    """Return a prediction object, or an error object for invalid JSON."""
+    try:
+        record = json.loads(line)
+        return record if isinstance(record, dict) else {"error": "invalid prediction"}
+    except (json.JSONDecodeError, TypeError):
+        return {"error": "invalid prediction"}
+
+
 def official_metrics(source_file, prediction_file, database_file):
-    """run WikiSQL's official evaluator and return its JSON metrics
+    """Run WikiSQL's evaluator after normalizing invalid prediction rows.
+
+    The official evaluator assumes every prediction line is valid JSON. A
+    blank or truncated decoder row would otherwise abort the complete split.
     """
     command = [
         sys.executable,
@@ -30,23 +43,34 @@ def official_metrics(source_file, prediction_file, database_file):
         str(database_file),
         str(prediction_file),
     ]
-    try:
-        result = subprocess.run(
-            command,
-            cwd=WIKISQL,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as error:
-        details = error.stderr.strip() or error.stdout.strip()
-        raise RuntimeError(
-            "WikiSQL evaluation failed. Install the project requirements "
-            "before running this script:\n"
-            "  python -m pip install -r requirements.txt\n\n"
-            f"Command: {' '.join(command)}\n"
-            f"Evaluator output:\n{details}"
-        ) from error
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        normalized_prediction = Path(temporary_directory) / "predictions.jsonl"
+        with prediction_file.open(encoding="utf-8") as source, \
+                normalized_prediction.open("w", encoding="utf-8") as target:
+            for line_number, line in enumerate(source, start=1):
+                record = prediction_record(line)
+                if "error" in record and line.strip():
+                    record["error"] = f"invalid prediction at line {line_number}"
+                target.write(json.dumps(record) + "\n")
+
+        command[-1] = str(normalized_prediction)
+        try:
+            result = subprocess.run(
+                command,
+                cwd=WIKISQL,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as error:
+            details = error.stderr.strip() or error.stdout.strip()
+            raise RuntimeError(
+                "WikiSQL evaluation failed. Install the project requirements "
+                "before running this script:\n"
+                "  python -m pip install -r requirements.txt\n\n"
+                f"Command: {' '.join(command)}\n"
+                f"Evaluator output:\n{details}"
+            ) from error
     return json.loads(result.stdout)
 
 
@@ -60,7 +84,7 @@ def component_accuracy(source_file, prediction_file):
             prediction_file.open(encoding="utf-8") as prediction:
         for gold_line, predicted_line in zip(source, prediction):
             gold = json.loads(gold_line)["sql"]
-            predicted = json.loads(predicted_line).get("query")
+            predicted = prediction_record(predicted_line).get("query")
             total += 1
 
             if predicted is None:
@@ -91,7 +115,7 @@ def parse_failure_rate(prediction_file):
     with prediction_file.open(encoding="utf-8") as prediction:
         for line in prediction:
             total += 1
-            failures += "error" in json.loads(line)
+            failures += "error" in prediction_record(line)
     return 100 * failures / total if total else 0.0
 
 
