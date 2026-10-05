@@ -342,3 +342,5 @@ python -m scripts.evaluate_model
 # Start the web application
 uvicorn app.main:app --reload
 ```
+
+[Medium Blog](https://medium.com/@huzzaaifa83/text-to-sql-with-a-transformer-built-and-trained-from-scratch-51c6c39d0fdc)
