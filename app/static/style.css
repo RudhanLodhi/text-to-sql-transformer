@@ -85,6 +85,12 @@ textarea {
     font: 20px/1.8 'Space Grotesk', sans-serif;
 }
 
+textarea::placeholder {
+    color: #777;
+    opacity: 1;
+    font: 20px/1.8 'Space Grotesk', sans-serif;
+}
+
 textarea:focus {
     outline: 3px solid var(--green);
 }

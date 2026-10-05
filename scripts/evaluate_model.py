@@ -23,19 +23,30 @@ OFFICIAL_EVALUATOR = WIKISQL / "evaluate.py"
 def official_metrics(source_file, prediction_file, database_file):
     """run WikiSQL's official evaluator and return its JSON metrics
     """
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(OFFICIAL_EVALUATOR),
-            str(source_file),
-            str(database_file),
-            str(prediction_file),
-        ],
-        cwd=WIKISQL,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    command = [
+        sys.executable,
+        str(OFFICIAL_EVALUATOR),
+        str(source_file),
+        str(database_file),
+        str(prediction_file),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=WIKISQL,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        details = error.stderr.strip() or error.stdout.strip()
+        raise RuntimeError(
+            "WikiSQL evaluation failed. Install the project requirements "
+            "before running this script:\n"
+            "  python -m pip install -r requirements.txt\n\n"
+            f"Command: {' '.join(command)}\n"
+            f"Evaluator output:\n{details}"
+        ) from error
     return json.loads(result.stdout)
 
 
