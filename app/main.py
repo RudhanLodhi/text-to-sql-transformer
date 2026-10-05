@@ -1,10 +1,9 @@
 from pathlib import Path
-
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-
+from starlette.requests import Request
 from app.inference import TextToSQL
 
 
@@ -16,14 +15,22 @@ class InferenceRequest(BaseModel):
 
 
 app = FastAPI(title="Text-to-SQL Transformer")
-frontend = Path(__file__).parent / "frontend"
-app.mount("/static", StaticFiles(directory=frontend), name="static")
+app_dir = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=app_dir / "templates")
+app.mount(
+    "/static",
+    StaticFiles(directory=app_dir / "static"),
+    name="static",
+)
 inference = TextToSQL()
 
 
 @app.get("/")
-def index():
-    return FileResponse(frontend / "index.html")
+def index(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+    )
 
 
 @app.post("/api/generate")

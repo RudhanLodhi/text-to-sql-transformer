@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en" dir="ltr">
+<html lang="en">
 
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Text-to-SQL Transformer</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
 </head>
 
 <body>
@@ -29,15 +29,22 @@
 
         <section class="results" aria-live="polite">
             <article class="result-card accent-red">
-                <div class="result-heading"><span>GREEDY</span><small>beam = 1</small></div>
-                <p id="greedy">SQL will appear here</p>
+                <div class="result-heading"><span>GREEDY SEARCH</span><small>beam = 1</small></div>
+                <div class="prediction">
+                    <div><h2>SQL</h2><pre id="greedy-sql">SQL will appear here</pre></div>
+                    <div><h2>Parsed query</h2><pre id="greedy-query">Parsed query will appear here</pre></div>
+                </div>
             </article>
             <article class="result-card accent-green">
-                <div class="result-heading"><span>PARSED QUERY</span><small>model output</small></div>
-                <p id="beam">Parsed query will appear here</p>
+                <div class="result-heading"><span>BEAM SEARCH</span><small>beam = 4</small></div>
+                <div class="prediction">
+                    <div><h2>SQL</h2><pre id="beam-sql">SQL will appear here</pre></div>
+                    <div><h2>Parsed query</h2><pre id="beam-query">Parsed query will appear here</pre></div>
+                </div>
             </article>
         </section>
     </main>
-    <script src="app.js"></script>
+    <script src="{{ url_for('static', path='app.js') }}?v=2"></script>
 </body>
+
 </html>

@@ -4,8 +4,7 @@ import torch
 from model.transformer import build_transformer
 from scripts.data_prep import encode_source
 from scripts.decode import (
-    beam_search,
-    greedy_decode,
+    decode,
     parse_prediction,
     to_readable_sql,
 )
@@ -37,40 +36,33 @@ class TextToSQL:
     def _source(self, question, columns):
         return encode_source(question, columns)
 
-    def predict(self, question, columns, mode="greedy", beam_size=4):
+    def _predict_mode(self, question, columns, beam_size):
         source = self._source(question, columns)
-        source_ids = self.sp.encode(source)
+        source_ids = self.sp.encode(source) + [EOS_ID]
         src = torch.tensor([source_ids], dtype=torch.long, device=self.device)
-        src_mask = (src != 0).unsqueeze(1).unsqueeze(1)
-
-        if mode == "beam":
-            output_ids = beam_search(
-                self.model, src, src_mask, beam_size=beam_size
-            )
-        else:
-            output_ids = greedy_decode(self.model, src, src_mask)
+        output_ids = decode(self.model, src, beam_size=beam_size)
 
         clean_ids = [
             token for token in output_ids if token not in (BOS_ID, EOS_ID)
         ]
         decoded = self.sp.decode(clean_ids)
-        query = parse_prediction(decoded)
+        try:
+            query = parse_prediction(decoded)
+        except ValueError:
+            query = None
 
-        if query is None:
-            return {
-                "question": question,
-                "columns": columns,
-                "mode": mode,
-                "decoded": decoded,
-                "query": None,
-                "sql": None,
-            }
+        return {
+            "decoded": decoded,
+            "query": query,
+            "sql": to_readable_sql({"query": query}, columns) if query else None,
+        }
 
+    def predict(self, question, columns, mode="greedy", beam_size=4):
+        """Return both greedy and fixed beam-4 predictions for the web UI."""
+        del mode, beam_size
         return {
             "question": question,
             "columns": columns,
-            "mode": mode,
-            "decoded": decoded,
-            "query": query,
-            "sql": to_readable_sql({"query": query}, columns),
+            "greedy": self._predict_mode(question, columns, beam_size=1),
+            "beam": self._predict_mode(question, columns, beam_size=4),
         }
