@@ -228,10 +228,10 @@ The generated Markdown reports are available here:
 
 | Split | Decoding | Logical form (%) | Execution (%) | Parse failures (%) |
 |---|---|---:|---:|---:|
-| Dev | Greedy | 61.49 | 68.10 | 1.15 |
-| Dev | Beam (`beam_size=4`) | 61.69 | 68.41 | 1.18 |
-| Test | Greedy | 61.43 | 67.74 | 1.22 |
-| Test | Beam (`beam_size=4`) | 37.46 | 41.88 | 1.19 |
+| Dev | greedy | 61.49 | 68.10 | 1.15 |
+| Dev | beam (4) | 61.69 | 68.41 | 1.18 |
+| Test | greedy | 61.43 | 67.74 | 1.22 |
+| Test | beam (4) | 61.89 | 68.33 | 1.18 |
 
 ### Component accuracy
 
@@ -240,9 +240,9 @@ beam search:
 
 | Component | Accuracy (%) |
 |---|---:|
-| Selected column | 90.61 |
-| Aggregation | 88.74 |
-| `WHERE` clause | 40.87 |
+| sel column correct | 90.61 |
+| agg correct | 88.74 |
+| WHERE clause correct | 40.87 |
 
 ### Dataset and training summary
 
